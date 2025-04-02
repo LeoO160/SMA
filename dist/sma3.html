@@ -16,35 +16,73 @@
   <body>
     <div id="root"></div>
     <script>
-      // Script para tentar habilitar autoplay em dispositivos móveis
+      // Script para interceptar navegação para memórias
       window.addEventListener('load', function() {
-        // Criar um contexto de áudio falso para "desbloquear" o áudio no iOS
-        var context = new (window.AudioContext || window.webkitAudioContext)();
-        
-        // Função para ativar autoplay
-        function enableAutoplay() {
-          // Tentar iniciar o contexto de áudio ao primeiro evento de interação
-          context.resume().then(function() {
-            console.log('Contexto de áudio iniciado');
-          });
-          
-          // Encontrar iframes de Spotify e tentar enviar comando de play
-          setTimeout(function() {
-            try {
-              var spotifyIframes = document.querySelectorAll('iframe[id="spotify-preview-iframe"]');
-              spotifyIframes.forEach(function(iframe) {
-                iframe.contentWindow.postMessage({ command: 'play' }, '*');
-              });
-            } catch(e) {
-              console.log('Erro ao tentar reproduzir Spotify:', e);
+        // Verificar se estamos em uma página de memória
+        function checkForMemoryPage() {
+          const pathElements = window.location.hash.split('/');
+          if (pathElements.includes('memory') && pathElements.length > 2) {
+            const memoryId = pathElements[pathElements.indexOf('memory') + 1];
+            
+            // Se ainda não tivemos interação forçada, redirecionar para a página especial
+            if (sessionStorage.getItem('spotifyInteractionForced') !== 'true' && 
+                sessionStorage.getItem('memoryRedirected') !== memoryId) {
+              
+              console.log('Redirecionando para página de interação forçada');
+              sessionStorage.setItem('memoryRedirected', memoryId);
+              
+              // Redirecionar para a página especial de autoplay
+              window.location.href = `./autoplay-memory.html?memory=${memoryId}`;
+            } else {
+              console.log('Já tivemos interação forçada, não é necessário redirecionar');
             }
-          }, 500);
+          }
         }
         
-        // Registrar eventos para capturar interação
-        ['touchstart', 'touchend', 'click', 'keydown'].forEach(function(event) {
-          document.addEventListener(event, enableAutoplay, { once: true });
-        });
+        // Verificar no carregamento inicial
+        setTimeout(checkForMemoryPage, 300);
+        
+        // Monitorar mudanças na hash
+        window.addEventListener('hashchange', checkForMemoryPage);
+        
+        // Verificar se há dados de autoplay no sessionStorage
+        if (sessionStorage.getItem('memoryAutoplayEnabled') === 'true') {
+          console.log('Autoplay habilitado pelo sessionStorage');
+          
+          // Criar um contexto de áudio
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          audioContext.resume();
+          
+          // Função para encontrar e tocar o iframe do Spotify
+          function tryPlaySpotify() {
+            setTimeout(() => {
+              const spotifyIframe = document.getElementById('spotify-preview-iframe');
+              if (spotifyIframe) {
+                console.log('Tentando iniciar player do Spotify via sessionStorage');
+                try {
+                  // Garantir que o iframe tem os parâmetros corretos
+                  if (!spotifyIframe.src.includes('autoplay=1')) {
+                    const newSrc = spotifyIframe.src.includes('?')
+                      ? `${spotifyIframe.src}&autoplay=1&init=1&t=${Date.now()}`
+                      : `${spotifyIframe.src}?autoplay=1&init=1&t=${Date.now()}`;
+                    spotifyIframe.src = newSrc;
+                  }
+                  
+                  // Enviar comando de play
+                  spotifyIframe.contentWindow.postMessage({ command: 'play' }, '*');
+                } catch (e) {
+                  console.error('Erro ao iniciar player:', e);
+                }
+              } else {
+                // Tentar novamente em 500ms se o iframe ainda não estiver pronto
+                setTimeout(tryPlaySpotify, 500);
+              }
+            }, 800);
+          }
+          
+          // Iniciar tentativa após um tempo para garantir que a página foi carregada
+          tryPlaySpotify();
+        }
       });
     </script>
   </body>
